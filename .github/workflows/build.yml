@@ -1,0 +1,77 @@
+
+
+name: Build APK
+on:
+  push:
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download Persian fonts
+        run: |
+          mkdir -p app/src/main/assets/fonts
+          cd app/src/main/assets/fonts
+          dl() {
+            out="$1"; shift
+            for u in "$@"; do
+              rm -f "$out"
+              if curl -fsSL --retry 2 -o "$out" "$u" && [ -s "$out" ]; then
+                magic=$(head -c 4 "$out" | od -An -tx1 | tr -d ' \n')
+                if [ "$magic" = "00010000" ] || [ "$magic" = "4f54544f" ] || [ "$magic" = "74727565" ]; then
+                  echo "OK     $out  <- $u"; return 0
+                fi
+              fi
+            done
+            rm -f "$out"; echo "FAILED $out"
+          }
+          dl Vazirmatn-Regular.ttf https://github.com/rastikerdar/vazirmatn/raw/master/fonts/ttf/Vazirmatn-Regular.ttf https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@master/fonts/ttf/Vazirmatn-Regular.ttf https://cdn.jsdelivr.net/npm/vazirmatn@33.0.3/fonts/ttf/Vazirmatn-Regular.ttf
+          dl Vazirmatn-Bold.ttf https://github.com/rastikerdar/vazirmatn/raw/master/fonts/ttf/Vazirmatn-Bold.ttf https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@master/fonts/ttf/Vazirmatn-Bold.ttf https://cdn.jsdelivr.net/npm/vazirmatn@33.0.3/fonts/ttf/Vazirmatn-Bold.ttf
+          dl Sahel.ttf https://github.com/rastikerdar/sahel-font/raw/master/dist/Sahel.ttf https://cdn.jsdelivr.net/gh/rastikerdar/sahel-font@master/dist/Sahel.ttf
+          dl Sahel-Bold.ttf https://github.com/rastikerdar/sahel-font/raw/master/dist/Sahel-Bold.ttf https://cdn.jsdelivr.net/gh/rastikerdar/sahel-font@master/dist/Sahel-Bold.ttf
+          dl Shabnam.ttf https://github.com/rastikerdar/shabnam-font/raw/master/dist/Shabnam.ttf https://cdn.jsdelivr.net/gh/rastikerdar/shabnam-font@master/dist/Shabnam.ttf
+          dl Shabnam-Bold.ttf https://github.com/rastikerdar/shabnam-font/raw/master/dist/Shabnam-Bold.ttf https://cdn.jsdelivr.net/gh/rastikerdar/shabnam-font@master/dist/Shabnam-Bold.ttf
+          dl Rajdhani-Medium.ttf https://github.com/google/fonts/raw/main/ofl/rajdhani/Rajdhani-Medium.ttf
+          dl Rajdhani-Bold.ttf https://github.com/google/fonts/raw/main/ofl/rajdhani/Rajdhani-Bold.ttf
+          echo "---- fonts in APK ----"
+          ls -la
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: 8.2
+
+      - name: Build APK
+        shell: bash
+        run: |
+          set -o pipefail
+          gradle assembleDebug --no-daemon --console=plain 2>&1 | tee build.log
+
+      - name: Show build errors
+        if: failure()
+        shell: bash
+        run: |
+          {
+            grep -E '^e: ' build.log | sed -E 's#file:///home/runner/work/[^/]+/[^/]+/##' | head -40
+            grep -A8 'What went wrong' build.log | head -20
+          } > errors.txt || true
+          msg=$(sed ':a;N;$!ba;s/\n/%0A/g' errors.txt)
+          echo "::error title=BUILD ERRORS::${msg}"
+          cat errors.txt
+
+      - name: Upload build log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build.log
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CarLauncher-APK
+          path: app/build/outputs/apk/debug/app-debug.apk
